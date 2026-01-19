@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Flow</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        :root {
+            --bg: #e0e5ec;
+            --sh-1: #ffffff;
+            --sh-2: #a3b1c6;
+            --accent: #4a90e2;
+        }
+        body {
+            background-color: var(--bg);
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        .glass-card {
+            background: var(--bg);
+            padding: 40px;
+            border-radius: 50px;
+            box-shadow: 20px 20px 60px var(--sh-2), -20px -20px 60px var(--sh-1);
+            text-align: center;
+            width: 300px;
+        }
+        #status { font-size: 1.2rem; color: #777; margin-bottom: 20px; font-weight: bold; }
+        
+        .timer-container {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 30px;
+        }
+        svg { transform: rotate(-90deg); }
+        .circle-bg { fill: none; stroke: var(--bg); stroke-width: 10; }
+        .circle-progress {
+            fill: none; stroke: var(--accent); stroke-width: 10;
+            stroke-linecap: round; stroke-dasharray: 565.48;
+            stroke-dashoffset: 0; transition: stroke-dashoffset 1s linear;
+        }
+        #timer {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3rem; font-weight: bold; color: #444;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .btn {
+            border: none; padding: 15px 30px; border-radius: 15px;
+            background: var(--bg); font-weight: bold; cursor: pointer;
+            box-shadow: 6px 6px 12px var(--sh-2), -6px -6px 12px var(--sh-1);
+            transition: all 0.2s; margin: 5px; color: #555;
+            outline: none;
+        }
+        .btn:active { box-shadow: inset 4px 4px 8px var(--sh-2), inset -4px -4px 8px var(--sh-1); }
+        .btn-primary { color: var(--accent); }
+    </style>
+</head>
+<body>
+
+<div class="glass-card">
+    <div id="status">集中タイム (25分)</div>
+    <div class="timer-container">
+        <svg width="200" height="200">
+            <circle class="circle-bg" cx="100" cy="100" r="90"></circle>
+            <circle id="progress" class="circle-progress" cx="100" cy="100" r="90"></circle>
+        </svg>
+        <div id="timer">25:00</div>
+    </div>
+    <button id="startBtn" class="btn btn-primary">START</button>
+    <button id="resetBtn" class="btn">RESET</button>
+</div>
+
+<script>
+    let timeLeft = 25 * 60;
+    let totalTime = 25 * 60;
+    let timerId = null;
+    let isWorking = true;
+
+    // Web Audio API & Vibration Patterns
+    let audioCtx = null;
+    let noiseSource = null;
+    const VIBRATE_WORK_END = [500, 200, 500, 200, 500]; 
+    const VIBRATE_REST_END = [200, 100, 200];
+
+    function createWhiteNoise() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        
+        const bufferSize = 2 * audioCtx.sampleRate;
+        const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            output[i] = Math.random() * 2 - 1;
+        }
+        const source = audioCtx.createBufferSource();
+        source.buffer = noiseBuffer;
+        source.loop = true;
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = 0.03; 
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        return source;
+    }
+
+    function updateDisplay() {
+        const mins = Math.floor(timeLeft / 60);
+        const secs = timeLeft % 60;
+        document.getElementById('timer').textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        const offset = 565.48 - (timeLeft / totalTime) * 565.48;
+        document.getElementById('progress').style.strokeDashoffset = offset;
+    }
+
+    function switchMode() {
+        if (isWorking) {
+            navigator.vibrate(VIBRATE_WORK_END);
+            alert("25分経過！5分休憩しましょう。");
+            isWorking = false;
+            timeLeft = 5 * 60;
+            document.getElementById('status').textContent = "休憩タイム (5分)";
+        } else {
+            navigator.vibrate(VIBRATE_REST_END);
+            alert("休憩終了！集中を再開しましょう。");
+            isWorking = true;
+            timeLeft = 25 * 60;
+            document.getElementById('status').textContent = "集中タイム (25分)";
+        }
+        totalTime = timeLeft;
+        updateDisplay();
+    }
+
+    document.getElementById('startBtn').addEventListener('click', function() {
+        if (!timerId) {
+            if (isWorking) {
+                noiseSource = createWhiteNoise();
+                noiseSource.start();
+            }
+            timerId = setInterval(() => {
+                timeLeft--;
+                updateDisplay();
+                if (timeLeft <= 0) {
+                    clearInterval(timerId);
+                    timerId = null;
+                    if (noiseSource) { noiseSource.stop(); noiseSource = null; }
+                    this.textContent = "START";
+                    switchMode();
+                }
+            }, 1000);
+            this.textContent = "PAUSE";
+        } else {
+            clearInterval(timerId);
+            timerId = null;
+            if (noiseSource) { noiseSource.stop(); noiseSource = null; }
+            this.textContent = "RESUME";
+        }
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+        location.reload();
+    });
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js');
+        });
+    }
+</script>
+</body>
+</html>
