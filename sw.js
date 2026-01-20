@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pomodoro-v5';
+const CACHE_NAME = 'pomodoro-v4-ZEN';
 const ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (e) => {
@@ -9,6 +9,7 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
 
 });
+
 
 
 
