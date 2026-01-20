@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Teru Pomodoro - ZEN</title>
+    <title>Teru Pomodoro - Zen </title>
     <link rel="manifest" href="manifest.json">
     <style>
         :root {
@@ -11,7 +11,7 @@
             --sh-1: #ffffff;
             --sh-2: #a3b1c6;
             --accent: #4a90e2; 
-            --rest: #d4af37; /* 仏教風ゴールド */
+            --rest: #d4af37; 
         }
         body {
             background-color: var(--bg);
@@ -30,7 +30,7 @@
             box-shadow: 20px 20px 60px var(--sh-2), -20px -20px 60px var(--sh-1);
             text-align: center;
             width: 300px;
-            position: relative; /* バージョン表示の基準 */
+            position: relative;
         }
         #status { font-size: 1.2rem; color: #777; margin-bottom: 20px; font-weight: bold; transition: 0.3s; }
         
@@ -64,7 +64,6 @@
         .btn:active { box-shadow: inset 4px 4px 8px var(--sh-2), inset -4px -4px 8px var(--sh-1); }
         .btn-primary { color: var(--accent); }
 
-        /* バージョン表示のスタイル */
         .version-info {
             position: absolute;
             bottom: 20px;
@@ -90,7 +89,7 @@
     <button id="startBtn" class="btn btn-primary">START</button>
     <button id="resetBtn" class="btn">RESET</button>
     
-    <div class="version-info">v4.1.0-zen</div>
+    <div class="version-info">v4.2.0-zen</div>
 </div>
 
 <script>
@@ -106,7 +105,7 @@
     const VIBRATE_REST_END = [200, 100, 200];
 
     // --- 音声生成ロジック ---
-    function stopNoise() { if (noiseSource) { noiseSource.stop(); noiseSource = null; } }
+    function stopNoise() { if (noiseSource) { try{noiseSource.stop();}catch(e){} noiseSource = null; } }
 
     function startNoise() {
         stopNoise();
@@ -128,6 +127,7 @@
 
     function playBuddhistBowl() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
         const now = audioCtx.currentTime;
         const freqs = [110, 220.5, 440.2, 880.4, 1200]; 
         freqs.forEach((f, i) => {
@@ -135,12 +135,13 @@
             const gain = audioCtx.createGain();
             osc.type = 'sine';
             osc.frequency.setValueAtTime(f, now);
+            // 音を少し短め（5秒）に設定して連続再生に対応
             gain.gain.setValueAtTime(i === 0 ? 0.15 : 0.07, now); 
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + 8);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 5);
             osc.connect(gain);
             gain.connect(audioCtx.destination);
             osc.start(now);
-            osc.stop(now + 8);
+            osc.stop(now + 5);
         });
     }
 
@@ -175,16 +176,30 @@
         progressCircle.style.stroke = isWorking ? 'var(--accent)' : 'var(--rest)';
     }
 
+    // ★休憩中の時間チェックとサウンド再生
+    function checkBreakSchedule(seconds) {
+        if (isWorking) return;
+        
+        // 1分ごと (300, 240, 180, 120, 60)
+        if (seconds % 60 === 0 && seconds !== 0) {
+            playBuddhistBowl();
+        }
+        // 終了直前 (30, 15, 5)
+        else if (seconds === 30 || seconds === 15 || seconds === 5) {
+            playBuddhistBowl();
+        }
+    }
+
     function switchMode() {
         if (isWorking) {
             navigator.vibrate(VIBRATE_WORK_END);
             stopNoise(); 
-            playBuddhistBowl();
-            startBreakDrone();
             isWorking = false;
             timeLeft = 5 * 60;
             document.getElementById('status').textContent = "瞑想休憩 (5分)";
             document.getElementById('status').style.color = "var(--rest)";
+            playBuddhistBowl(); // 休憩開始の音
+            startBreakDrone();
         } else {
             navigator.vibrate(VIBRATE_REST_END);
             stopBreakSound();
@@ -202,9 +217,14 @@
         if (!timerId) {
             if (isWorking) startNoise();
             else startBreakDrone();
+            
             timerId = setInterval(() => {
                 timeLeft--;
                 updateDisplay();
+                
+                // 休憩中のスケジュールチェック
+                if (!isWorking) checkBreakSchedule(timeLeft);
+
                 if (timeLeft <= 0) switchMode();
             }, 1000);
             this.textContent = "PAUSE";
@@ -229,4 +249,3 @@
 </script>
 </body>
 </html>
-
