@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Teru Pomodoro4</title>
+    <title>Focus Flow - Zen</title>
     <link rel="manifest" href="manifest.json">
     <style>
         :root {
             --bg: #e0e5ec;
             --sh-1: #ffffff;
             --sh-2: #a3b1c6;
-            --accent: #4a90e2;
+            --accent: #4a90e2; 
+            --rest: #d4af37; /* 仏教風ゴールド */
         }
         body {
             background-color: var(--bg);
@@ -29,8 +30,9 @@
             box-shadow: 20px 20px 60px var(--sh-2), -20px -20px 60px var(--sh-1);
             text-align: center;
             width: 300px;
+            position: relative; /* バージョン表示の基準 */
         }
-        #status { font-size: 1.2rem; color: #777; margin-bottom: 20px; font-weight: bold; }
+        #status { font-size: 1.2rem; color: #777; margin-bottom: 20px; font-weight: bold; transition: 0.3s; }
         
         .timer-container {
             position: relative;
@@ -61,6 +63,17 @@
         }
         .btn:active { box-shadow: inset 4px 4px 8px var(--sh-2), inset -4px -4px 8px var(--sh-1); }
         .btn-primary { color: var(--accent); }
+
+        /* バージョン表示のスタイル */
+        .version-info {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            font-size: 0.65rem;
+            color: #a3b1c6;
+            letter-spacing: 1px;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
@@ -76,93 +89,143 @@
     </div>
     <button id="startBtn" class="btn btn-primary">START</button>
     <button id="resetBtn" class="btn">RESET</button>
+    
+    <div class="version-info">v4.1.0-zen</div>
 </div>
 
 <script>
-// --- 仏教風サウンド生成ロジック ---
-let breakSoundSource = []; // 複数のオシレーターを管理
+    let timeLeft = 25 * 60;
+    let totalTime = 25 * 60;
+    let timerId = null;
+    let isWorking = true;
 
-function playBuddhistBowl() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
+    let audioCtx = null;
+    let noiseSource = null;
+    let breakSoundSource = [];
+    const VIBRATE_WORK_END = [500, 200, 500, 200, 500]; 
+    const VIBRATE_REST_END = [200, 100, 200];
 
-    const now = audioCtx.currentTime;
-    
-    // おりんの音を構成する周波数（基音と倍音）
-    // 少しずらすことで「うなり」を生み出します
-    const freqs = [110, 220.5, 440.2, 880.4, 1200]; 
-    
-    freqs.forEach((f, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        
-        osc.type = 'sine'; // 澄んだ音にするためにサイン波を使用
-        osc.frequency.setValueAtTime(f, now);
-        
-        // 音の強弱（エンベロープ）の設定
-        // 最初は強く、その後非常にゆっくり消えていく
-        gain.gain.setValueAtTime(i === 0 ? 0.2 : 0.1, now); 
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 10); // 10秒かけて消える
-        
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        
-        osc.start(now);
-        osc.stop(now + 10);
-    });
-}
+    // --- 音声生成ロジック ---
+    function stopNoise() { if (noiseSource) { noiseSource.stop(); noiseSource = null; } }
 
-// 休憩中のバックグラウンド・ドローン音（低く響く音）
-function startBreakDrone() {
-    stopNoise(); // 既存の音を停止
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
-    const baseFreq = 110; // 低いAの音
-    [1, 1.01].forEach(detune => { // 微妙にずらして「ゆらぎ」を作る
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.frequency.value = baseFreq * detune;
-        gain.gain.value = 0.02; // 非常に小さな音で鳴らす
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        breakSoundSource.push(osc);
-    });
-}
-
-function stopBreakSound() {
-    breakSoundSource.forEach(osc => osc.stop());
-    breakSoundSource = [];
-}
-
-// --- モード切替ロジックの修正 ---
-function switchMode() {
-    if (isWorking) {
-        // 集中終了 -> 休憩へ
-        navigator.vibrate(VIBRATE_WORK_END);
-        stopNoise(); 
-        playBuddhistBowl(); // ★おりんを鳴らす
-        startBreakDrone();  // ★瞑想音を開始
-        isWorking = false;
-        timeLeft = 5 * 60;
-        document.getElementById('status').textContent = "休憩・瞑想タイム (5分)";
-        document.getElementById('status').style.color = "#d4af37"; // 仏教っぽいゴールド
-    } else {
-        // 休憩終了 -> 集中へ
-        navigator.vibrate(VIBRATE_REST_END);
-        stopBreakSound(); // ★休憩の音を止める
-        isWorking = true;
-        timeLeft = 25 * 60;
-        document.getElementById('status').textContent = "集中タイム (25分)";
-        document.getElementById('status').style.color = "var(--accent)";
-        startNoise(); 
+    function startNoise() {
+        stopNoise();
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const bufferSize = 2 * audioCtx.sampleRate;
+        const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+        noiseSource = audioCtx.createBufferSource();
+        noiseSource.buffer = noiseBuffer;
+        noiseSource.loop = true;
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = 0.03; 
+        noiseSource.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        noiseSource.start();
     }
-    totalTime = timeLeft;
-    updateDisplay();
-}
+
+    function playBuddhistBowl() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioCtx.currentTime;
+        const freqs = [110, 220.5, 440.2, 880.4, 1200]; 
+        freqs.forEach((f, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(f, now);
+            gain.gain.setValueAtTime(i === 0 ? 0.15 : 0.07, now); 
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 8);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 8);
+        });
+    }
+
+    function startBreakDrone() {
+        stopNoise();
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const baseFreq = 110;
+        [1, 1.005].forEach(detune => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.frequency.value = baseFreq * detune;
+            gain.gain.value = 0.015;
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            breakSoundSource.push(osc);
+        });
+    }
+
+    function stopBreakSound() {
+        breakSoundSource.forEach(osc => { try { osc.stop(); } catch(e) {} });
+        breakSoundSource = [];
+    }
+
+    function updateDisplay() {
+        const mins = Math.floor(timeLeft / 60);
+        const secs = timeLeft % 60;
+        document.getElementById('timer').textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        const offset = 565.48 - (timeLeft / totalTime) * 565.48;
+        const progressCircle = document.getElementById('progress');
+        progressCircle.style.strokeDashoffset = offset;
+        progressCircle.style.stroke = isWorking ? 'var(--accent)' : 'var(--rest)';
+    }
+
+    function switchMode() {
+        if (isWorking) {
+            navigator.vibrate(VIBRATE_WORK_END);
+            stopNoise(); 
+            playBuddhistBowl();
+            startBreakDrone();
+            isWorking = false;
+            timeLeft = 5 * 60;
+            document.getElementById('status').textContent = "瞑想休憩 (5分)";
+            document.getElementById('status').style.color = "var(--rest)";
+        } else {
+            navigator.vibrate(VIBRATE_REST_END);
+            stopBreakSound();
+            isWorking = true;
+            timeLeft = 25 * 60;
+            document.getElementById('status').textContent = "集中タイム (25分)";
+            document.getElementById('status').style.color = "var(--accent)";
+            startNoise(); 
+        }
+        totalTime = timeLeft;
+        updateDisplay();
+    }
+
+    document.getElementById('startBtn').addEventListener('click', function() {
+        if (!timerId) {
+            if (isWorking) startNoise();
+            else startBreakDrone();
+            timerId = setInterval(() => {
+                timeLeft--;
+                updateDisplay();
+                if (timeLeft <= 0) switchMode();
+            }, 1000);
+            this.textContent = "PAUSE";
+        } else {
+            clearInterval(timerId);
+            timerId = null;
+            stopNoise();
+            stopBreakSound();
+            this.textContent = "RESUME";
+        }
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+        location.reload();
+    });
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js');
+        });
+    }
 </script>
 </body>
-
 </html>
-
-
