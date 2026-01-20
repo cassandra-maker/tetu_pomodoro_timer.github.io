@@ -1,6 +1,6 @@
 {
   "name": "Focus Flow Pomodoro",
-  "short_name": "FocusFlow",
+  "short_name": "TeruPomodoro",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#e0e5ec",
@@ -12,4 +12,5 @@
       "type": "image/png"
     }
   ]
+
 }
