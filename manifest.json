@@ -1,6 +1,6 @@
 {
-  "name": "Teru Pomodoro5",
-  "short_name": "Teru Pomodoro5",
+  "name": "Teru Pomodoro 4 ZEN",
+  "short_name": "Teru Pomodoro",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#e0e5ec",
@@ -14,6 +14,7 @@
   ]
 
 }
+
 
 
 
